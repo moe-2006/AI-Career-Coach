@@ -7,7 +7,7 @@ import os
 import json
 
 app = FastAPI()
-load_dotenv(dotenv_path=".venv/.env")  # explicit path if needed
+load_dotenv()
 
 
 
@@ -34,6 +34,7 @@ class AssessmentResponse(BaseModel):
     final_step: bool = False
 
 # ----- OpenAI API Key -----
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # ----- Endpoint -----
 @app.post("/career-assessment", response_model=AssessmentResponse)
@@ -68,13 +69,16 @@ Return a JSON object with fields:
 """
 
     # Call OpenAI
-    response = openai.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are an adaptive career assessment AI."},
-            {"role": "user", "content": prompt + "\n" + user_content}
-        ]
-    )
+    response = openai.ChatCompletion.create(
+    model="gpt-3.5-turbo",
+    messages=[
+        {"role": "system", "content": "You are an adaptive career assessment AI."},
+        {"role": "user", "content": prompt + "\n" + user_content}
+    ],
+    max_tokens=500,
+    temperature=0.7  # Adjust for creativity
+)
+
 
     ai_output = response.choices[0].message.content.strip()
 
