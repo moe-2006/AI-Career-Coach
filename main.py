@@ -7,7 +7,8 @@ import os
 import json
 
 app = FastAPI()
-load_dotenv()
+load_dotenv(dotenv_path=".venv/.env")  # explicit path if needed
+
 
 
 # ----- Models -----
@@ -100,3 +101,5 @@ Return a JSON object with fields:
         resources=resources_list,
         final_step=ai_json.get("final_step", False)
     )
+
+print(openai.Model.list())  # Should return available models if the key works
