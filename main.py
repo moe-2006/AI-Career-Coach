@@ -34,7 +34,6 @@ class AssessmentResponse(BaseModel):
     final_step: bool = False
 
 # ----- OpenAI API Key -----
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # ----- Endpoint -----
 @app.post("/career-assessment", response_model=AssessmentResponse)
