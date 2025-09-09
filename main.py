@@ -68,17 +68,22 @@ Return a JSON object with fields:
 - final_step: boolean (true if stage 'jobs')
 """
 
+    # ----- Model selection -----
+    allowed_models = ["gpt-3.5-turbo", "gpt-5-nano"]
+    model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # default from env
+    if model not in allowed_models:
+        model = "gpt-3.5-turbo"
+
     # Call OpenAI
     response = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo",
-    messages=[
-        {"role": "system", "content": "You are an adaptive career assessment AI."},
-        {"role": "user", "content": prompt + "\n" + user_content}
-    ],
-    max_tokens=500,
-    temperature=0.7  # Adjust for creativity
-)
-
+        model=model,
+        messages=[
+            {"role": "system", "content": "You are an adaptive career assessment AI."},
+            {"role": "user", "content": prompt + "\n" + user_content}
+        ],
+        max_tokens=500,
+        temperature=0.7
+    )
 
     ai_output = response.choices[0].message.content.strip()
 
