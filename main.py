@@ -39,6 +39,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 async def career_assessment(request: AssessmentRequest):
     stage = request.current_stage
 
+    # Format previous answers
     previous_answers_text = "\n".join([
         f"{a.question}: {'correct' if a.correct else 'incorrect'}" 
         for a in request.previous_answers
@@ -46,44 +47,61 @@ async def career_assessment(request: AssessmentRequest):
 
     user_content = f"Previous answers:\n{previous_answers_text}"
 
+    # Detect last answer correctness (if any)
+    last_answer_correct = True
+    if request.previous_answers:
+        last_answer_correct = request.previous_answers[-1].correct
+
+    # Prompt
     prompt = f"""
 You are a career coach guiding a user interested in '{request.career}'.
 The user is currently at stage '{stage}'.
 Previous answers:\n{previous_answers_text}
 
 Instructions:
-- Stage 'intro': Provide a general job description and required skills/education. Then explain that we will test their skills to progress.
-- Stage 'level_1': Ask a basic question to test a key skill. If user passes, advance. If they fail, provide 3-5 engaging resources (YouTube, project-based learning, interactive exercises) and a retry question.
-- Stage 'level_2': Ask a slightly harder question. Same pass/fail rules as above.
-- Stage 'jobs': Provide actual job listings or internships suitable for their skill level.
+- Stage 'intro':
+  Provide a general job description and required skills/education. 
+  Then explain that we will test their skills to progress. 
+  Do not provide resources at this stage.
+
+- Stage 'level_1' and 'level_2':
+  Ask a skill-testing question.
+  - If the last answer was correct: advance to the next stage, congratulate them, and give the next question (if applicable). Do NOT include resources.
+  - If the last answer was incorrect: stay at the same stage, provide 3–5 engaging resources (YouTube, project-based learning, interactive exercises), and give a retry question.
+
+- Stage 'jobs':
+  Provide actual job listings or internships suitable for their skill level. 
+  Do not provide resources here.
+
 Return a JSON object with fields:
 - stage: string (next stage to progress to)
 - message: string (text to display)
 - next_question: string (if applicable)
-- resources: list of objects (type, title, link) (if applicable)
-- final_step: boolean (true if stage 'jobs')
+- resources: list of objects (type, title, link) (only if the last answer was incorrect, otherwise exclude this field)
+- final_step: boolean (true if stage is 'jobs')
 """
 
+    # Model selection
     allowed_models = ["gpt-3.5-turbo", "gpt-5-nano"]
     model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
     if model not in allowed_models:
         model = "gpt-3.5-turbo"
 
-    # Adjust max tokens per model
     max_tokens = 600 if model == "gpt-3.5-turbo" else 1000
 
-    # Call OpenAI
+    # --- Call OpenAI ---
     response = openai.ChatCompletion.create(
         model=model,
         messages=[
-            {"role": "system", "content": "You are an adaptive career assessment AI."},
-            {"role": "user", "content": prompt + "\n" + user_content}
+            {"role": "system", "content": "You are a career assessment AI. Always respond ONLY with valid JSON, no extra text."},
+            {"role": "user", "content": prompt + "\n" + user_content + f"\n\nLast answer was {'correct' if last_answer_correct else 'incorrect'}. Return ONLY a JSON object."}
         ],
-        max_completion_tokens=max_tokens
+        max_tokens=max_tokens,
+        **({"temperature": 0.7} if model == "gpt-3.5-turbo" else {})
     )
 
     ai_output = response.choices[0].message.content.strip()
-    print("AI raw output:", ai_output)  # Always log it
+    print("AI raw output:", ai_output)
 
     # Parse JSON safely
     try:
@@ -95,8 +113,9 @@ Return a JSON object with fields:
             final_step=(stage == "jobs")
         )
 
+    # Only keep resources if they exist and last answer was incorrect
     resources_list = None
-    if "resources" in ai_json and isinstance(ai_json["resources"], list):
+    if not last_answer_correct and "resources" in ai_json and isinstance(ai_json["resources"], list):
         resources_list = [Resource(**r) for r in ai_json["resources"]]
 
     return AssessmentResponse(
