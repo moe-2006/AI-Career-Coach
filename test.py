@@ -6,7 +6,7 @@ load_dotenv()  # Load .env variables
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 response = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo",
+    model="gpt-5-nano",
     messages=[{"role": "user", "content": "Say hi in JSON like: {\"message\": \"Hi\"}"}]
 )
 print(response.choices[0].message.content)
