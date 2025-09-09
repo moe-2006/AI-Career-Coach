@@ -9,8 +9,6 @@ import json
 app = FastAPI()
 load_dotenv()
 
-
-
 # ----- Models -----
 class UserAnswer(BaseModel):
     question: str
@@ -19,7 +17,7 @@ class UserAnswer(BaseModel):
 class AssessmentRequest(BaseModel):
     career: str
     previous_answers: Optional[List[UserAnswer]] = []
-    current_stage: Optional[str] = "intro"  # stages: intro, level_1, level_2, jobs
+    current_stage: Optional[str] = "intro"
 
 class Resource(BaseModel):
     type: str
@@ -41,7 +39,6 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 async def career_assessment(request: AssessmentRequest):
     stage = request.current_stage
 
-    # Format previous answers
     previous_answers_text = "\n".join([
         f"{a.question}: {'correct' if a.correct else 'incorrect'}" 
         for a in request.previous_answers
@@ -49,7 +46,6 @@ async def career_assessment(request: AssessmentRequest):
 
     user_content = f"Previous answers:\n{previous_answers_text}"
 
-    # Build prompt
     prompt = f"""
 You are a career coach guiding a user interested in '{request.career}'.
 The user is currently at stage '{stage}'.
@@ -68,11 +64,13 @@ Return a JSON object with fields:
 - final_step: boolean (true if stage 'jobs')
 """
 
-    # ----- Model selection -----
     allowed_models = ["gpt-3.5-turbo", "gpt-5-nano"]
-    model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # default from env
+    model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
     if model not in allowed_models:
         model = "gpt-3.5-turbo"
+
+    # Adjust max tokens per model
+    max_tokens = 600 if model == "gpt-3.5-turbo" else 1000
 
     # Call OpenAI
     response = openai.ChatCompletion.create(
@@ -81,23 +79,22 @@ Return a JSON object with fields:
             {"role": "system", "content": "You are an adaptive career assessment AI."},
             {"role": "user", "content": prompt + "\n" + user_content}
         ],
-        max_tokens=500,
-        temperature=0.7
+        max_completion_tokens=max_tokens
     )
 
     ai_output = response.choices[0].message.content.strip()
+    print("AI raw output:", ai_output)  # Always log it
 
-    # Parse AI JSON
+    # Parse JSON safely
     try:
         ai_json = json.loads(ai_output)
     except json.JSONDecodeError:
         return AssessmentResponse(
             stage=stage,
-            message="Error parsing AI response. Raw output: " + ai_output,
+            message=f"Error parsing AI response. Raw output: {ai_output or 'EMPTY RESPONSE'}",
             final_step=(stage == "jobs")
         )
 
-    # Convert resources to Pydantic Resource objects
     resources_list = None
     if "resources" in ai_json and isinstance(ai_json["resources"], list):
         resources_list = [Resource(**r) for r in ai_json["resources"]]
