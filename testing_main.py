@@ -8,6 +8,10 @@ import json
 
 # Load environment variables
 load_dotenv()
+print("RUNNING testing_main.py")
+print("Working directory:", os.getcwd())
+print("OPENAI_API_KEY loaded?", bool(os.getenv("OPENAI_API_KEY")))
+print("OPENAI_MODEL loaded?", os.getenv("OPENAI_MODEL"))
 
 app = FastAPI()
 
