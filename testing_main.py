@@ -8,10 +8,6 @@ import json
 
 # Load environment variables
 load_dotenv()
-print("RUNNING testing_main.py")
-print("Working directory:", os.getcwd())
-print("OPENAI_API_KEY loaded?", bool(os.getenv("OPENAI_API_KEY")))
-print("OPENAI_MODEL loaded?", os.getenv("OPENAI_MODEL"))
 
 app = FastAPI()
 
@@ -24,11 +20,12 @@ class AssessmentRequest(BaseModel):
     career: str
     previous_answers: Optional[List[UserAnswer]] = []
     current_stage: Optional[str] = "intro"
+    total_questions: Optional[int] = 3
 
 class Resource(BaseModel):
     type: str
     title: str
-    link: str
+    link: Optional[str] = None
 
 class AssessmentResponse(BaseModel):
     stage: str
@@ -40,103 +37,157 @@ class AssessmentResponse(BaseModel):
 # ----- OpenAI API Key -----
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# ----- Helper: safe AI call -----
+def call_ai_debug(prompt: str, max_tokens: int, fallback_question: str, stage: str = "") -> dict:
+    """
+    Call OpenAI safely with debug logs and parse JSON.
+    Ensures 'stage' is always a string and resources are properly handled.
+    """
+    for attempt in range(2):
+        try:
+            print(f"\n--- AI Call Attempt {attempt + 1} ---")
+            print(f"Prompt length: {len(prompt)} characters")
+
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a career assessment AI. Provide output as JSON."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=max_tokens,
+                temperature=0.7
+            )
+
+            ai_output = response.choices[0].message.content
+            print("Raw AI output:", repr(ai_output))
+
+            ai_json = json.loads(ai_output)
+
+            # Ensure 'stage' is a string
+            ai_stage = ai_json.get("stage", stage)
+            if not isinstance(ai_stage, str):
+                ai_stage = str(ai_stage)
+
+            # Handle resources/jobs
+            resources_list: Optional[List[Resource]] = None
+            raw_resources = ai_json.get("resources")
+            if raw_resources and isinstance(raw_resources, list):
+                resources_list = []
+                for r in raw_resources:
+                    if isinstance(r, dict):
+                        try:
+                            resources_list.append(Resource(**r))
+                        except Exception as e:
+                            print(f"Skipping invalid resource dict: {r}, reason: {e}")
+                    elif isinstance(r, str):
+                        resources_list.append(Resource(type="job", title=r, link=""))
+
+            return {
+                "stage": ai_stage,
+                "message": ai_json.get("message", ""),
+                "next_question": ai_json.get("next_question"),
+                "resources": resources_list,
+                "final_step": bool(ai_json.get("final_step", False))
+            }
+
+        except Exception as e:
+            print(f"AI call failed on attempt {attempt + 1}: {e}")
+            if attempt == 1:
+                return {
+                    "stage": stage or "intro",
+                    "message": f"An error occurred. ({e})",
+                    "next_question": fallback_question,
+                    "resources": None,
+                    "final_step": False
+                }
+
 # ----- Endpoint -----
 @app.post("/career-assessment", response_model=AssessmentResponse)
 async def career_assessment(request: AssessmentRequest):
     stage = request.current_stage or "intro"
+    total_questions = request.total_questions or 3
 
-    # Format previous answers
     previous_answers_text = "\n".join([
         f"{a.question}: {'correct' if a.correct else 'incorrect'}" 
         for a in request.previous_answers
     ]) or "No previous answers yet."
 
-    # Detect last answer correctness
     last_answer_correct = True
     if request.previous_answers:
         last_answer_correct = request.previous_answers[-1].correct
 
-    # --- Auto-advance for intro stage ---
-    if stage == "intro":
-        return AssessmentResponse(
-            stage="level_1",
-            message=(
-                f"As a {request.career}, you will develop skills and knowledge relevant to this field. "
-                "Let's start testing your abilities!"
-            ),
-            next_question="What is the primary purpose of using loops in programming?",
-            resources=[],
-            final_step=False
-        )
+    correct_answers_count = sum(1 for a in request.previous_answers if a.correct)
 
-    # --- Build prompt for AI ---
-    prompt = f"""
-You are a career coach guiding a user interested in '{request.career}'.
+    # Move to jobs stage only when correct answers reach total_questions
+    if correct_answers_count >= total_questions:
+        stage = "jobs"
+
+    # --- Stage-specific prompts ---
+    if stage == "intro":
+        prompt = f"""
+You are a career coach AI.
+The user wants to pursue a career as a '{request.career}'.
+Your response must be a valid JSON object.
+
+Task:
+- Introduce the role of a {request.career}.
+- Provide the first **technical/skill-testing question** for a beginner in this career.
+  Do NOT ask motivational or personal questions.
+- Ensure 'stage' is a string.
+- Output keys: stage, message, next_question, final_step.
+"""
+        fallback_question = "What is the first step in assessing a patient?"
+
+    elif stage in ["level_1", "level_2", "level_3"]:
+        if last_answer_correct:
+            prompt = f"""
+You are a career coach AI guiding a user interested in '{request.career}'.
 Stage: {stage}
-Previous answers: {previous_answers_text}
+Previous answers:\n{previous_answers_text}
 
 Instructions:
-- Stage 'level_1' and 'level_2': if last answer was correct, advance stage; if incorrect, provide 3-5 learning resources and a retry question.
-- Stage 'jobs': provide job listings suitable for skill level.
-
-Return ONLY a JSON object with keys: stage, message, next_question, resources (only if last answer was incorrect), final_step.
+- Last answer was correct. Provide the next technical question.
+- Ensure 'stage' is a string.
+- Output keys: stage, message, next_question, final_step.
 """
+        else:
+            prompt = f"""
+You are a career coach AI guiding a user interested in '{request.career}'.
+Stage: {stage}
+Previous answers:\n{previous_answers_text}
 
-    # --- Model selection from .env ---
-    allowed_models = ["gpt-3.5-turbo", "gpt-5-nano"]
-    model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-    if model not in allowed_models:
-        model = "gpt-3.5-turbo"
+Instructions:
+- Last answer was incorrect. Provide 3-5 learning resources and a retry technical question.
+- Ensure 'stage' is a string.
+- Output keys: stage, message, next_question, resources, final_step.
+"""
+        fallback_question = "Provide a retry question to continue learning."
 
-    max_tokens = 600 if model == "gpt-3.5-turbo" else 1000
+    elif stage == "jobs":
+        prompt = f"""
+You are a career coach AI.
+The user has completed the required number of correct answers for '{request.career}'.
+Provide 3-5 job opportunities suitable for the user's skill level.
+Ensure 'stage' is a string.
+Output keys: stage, message, next_question, resources, final_step=True.
+"""
+        fallback_question = "Here are example jobs for this skill level."
+    else:
+        prompt = f"""
+You are a career coach AI.
+The user is at stage '{stage}' for '{request.career}'.
+Generate a relevant technical question or guidance for this stage.
+Ensure 'stage' is a string.
+Output keys: stage, message, next_question, final_step.
+"""
+        fallback_question = "Here is a fallback question to continue."
 
-    # --- Build OpenAI arguments dynamically ---
-    completion_args = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": "You are a career assessment AI. Respond only with valid JSON."},
-            {"role": "user", "content": prompt + f"\nLast answer was {'correct' if last_answer_correct else 'incorrect'}."}
-        ]
-    }
+    ai_result = call_ai_debug(prompt, max_tokens=600, fallback_question=fallback_question, stage=stage)
 
-    if model == "gpt-3.5-turbo":
-        completion_args["max_tokens"] = max_tokens
-        completion_args["temperature"] = 0.7
-    else:  # GPT-5 nano
-        completion_args["max_completion_tokens"] = max_tokens
-
-    # --- Call OpenAI safely ---
-    try:
-        response = openai.ChatCompletion.create(**completion_args)
-        ai_output = response.choices[0].message.content.strip()
-        print("AI raw output:", ai_output)
-    except openai.error.OpenAIError as e:
-        return AssessmentResponse(
-            stage=stage,
-            message=f"OpenAI API error: {e}",
-            final_step=(stage == "jobs")
-        )
-
-    # --- Parse AI JSON safely ---
-    try:
-        ai_json = json.loads(ai_output)
-    except json.JSONDecodeError:
-        return AssessmentResponse(
-            stage=stage,
-            message=f"Error parsing AI response. Raw output: {ai_output or 'EMPTY RESPONSE'}",
-            final_step=(stage == "jobs")
-        )
-
-    # --- Convert resources if last answer was incorrect ---
-    resources_list = None
-    if not last_answer_correct and "resources" in ai_json and isinstance(ai_json["resources"], list):
-        resources_list = [Resource(**r) for r in ai_json["resources"]]
-
-    # --- Return AI response ---
     return AssessmentResponse(
-        stage=ai_json.get("stage", stage),
-        message=ai_json.get("message", ""),
-        next_question=ai_json.get("next_question"),
-        resources=resources_list,
-        final_step=ai_json.get("final_step", False)
+        stage=ai_result["stage"],
+        message=ai_result["message"],
+        next_question=ai_result["next_question"],
+        resources=ai_result["resources"],
+        final_step=ai_result["final_step"]
     )
