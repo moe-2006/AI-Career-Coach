@@ -85,7 +85,7 @@ function handleAnswer(isCorrect: boolean) {
 async function callApi() {
     loadingIndicator.classList.remove('hidden');
     try {
-        const apiUrl = 'http://127.0.0.1:8000/career-assessment';
+        const apiUrl = 'https://ai-career-coach-1vtz.onrender.com/career-assessment';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -104,7 +104,7 @@ async function fetchAnswer() {
     loadingIndicator.classList.remove('hidden');
     try {
         const question = aiQuestionEl.textContent || "";
-        const apiUrl = 'http://127.0.0.1:8000/reveal-answer';
+        const apiUrl = 'https://ai-career-coach-1vtz.onrender.com/reveal-answer';
         const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
