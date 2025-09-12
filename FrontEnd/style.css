@@ -1,0 +1,125 @@
+/* General body styling */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f4f7f9;
+    color: #333;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+}
+
+/* Main application container */
+#app {
+    background-color: #ffffff;
+    padding: 2rem 3rem;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 600px;
+    text-align: center;
+}
+
+/* Headings and paragraphs */
+h1, h2 {
+    color: #1a253c;
+}
+
+p {
+    color: #5a647e;
+    line-height: 1.6;
+}
+
+/* Input field styling */
+input[type="text"] {
+    width: 80%;
+    padding: 12px;
+    margin: 1rem 0;
+    border: 1px solid #dcdfe6;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+/* General button styling */
+button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out;
+    margin: 0.5rem;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+/* Styling for the incorrect/judgment buttons */
+#incorrect-btn {
+    background-color: #dc3545;
+}
+
+#incorrect-btn:hover {
+    background-color: #a71d2a;
+}
+
+/* Answer and feedback box */
+#answer-box {
+    background-color: #e9f5ff;
+    border: 1px solid #b8d6f0;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1.5rem;
+    text-align: left;
+}
+
+/* Job list styling */
+#job-list {
+    list-style-type: none;
+    padding: 0;
+    text-align: left;
+}
+
+#job-list li {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+}
+
+#job-list a {
+    text-decoration: none;
+    color: #007bff;
+    font-weight: 600;
+}
+
+/* Loading indicator styling */
+#loading-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5rem;
+    z-index: 999;
+}
+
+/* General class to hide any element */
+.hidden {
+    display: none;
+}
+
+/* Specific rule to ensure the loading indicator is hidden by default */
+#loading-indicator.hidden {
+    display: none;
+}

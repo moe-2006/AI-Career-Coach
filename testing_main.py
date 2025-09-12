@@ -1,8 +1,9 @@
 from urllib.parse import quote_plus
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Optional
-from serpapi import GoogleSearch # New import
+from serpapi import GoogleSearch
 import openai
 import os
 import json
@@ -11,19 +12,30 @@ from dotenv import load_dotenv
 # ----- Load environment variables -----
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
-SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY") # New env var
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# ... (Your Pydantic models UserAnswer, AssessmentRequest, etc. remain the same) ...
+class AnswerRequest(BaseModel):
+    question: str
+
 class UserAnswer(BaseModel):
     question: str
     correct: bool
 
+# Updated: Added the new field for the frontend to signal a retry
 class AssessmentRequest(BaseModel):
     career: str
     previous_answers: Optional[List[UserAnswer]] = []
     total_questions: Optional[int] = 3
+    is_retry: Optional[bool] = False
 
 class Resource(BaseModel):
     type: str
@@ -35,7 +47,7 @@ class AssessmentResponse(BaseModel):
     next_question: Optional[str] = None
     resources: Optional[List[Resource]] = None
     final_step: bool = False
-# ... (Your call_ai function remains the same) ...
+
 def call_ai(prompt: str, max_tokens: int = 600) -> dict:
     try:
         response = openai.ChatCompletion.create(
@@ -53,7 +65,6 @@ def call_ai(prompt: str, max_tokens: int = 600) -> dict:
         print(f"AI call failed: {e}")
         return {"message": "AI failed to generate a response.", "next_question": None, "resources": None}
 
-#Getting listings from serp api woo hooo
 def get_jobs_from_serpapi(career: str, results: int = 10) -> List[Resource]:
     """
     Fetches job listings from Google Jobs via SerpApi, checking multiple keys for a valid link.
@@ -71,21 +82,16 @@ def get_jobs_from_serpapi(career: str, results: int = 10) -> List[Resource]:
         jobs = []
         
         for job in data.get("jobs_results", [])[:results]:
-            # --- START OF RESILIENT METHOD ---
-            job_link = "" # Default to an empty string
+            job_link = ""
 
-            # 1. First, try to get the link from 'apply_options'
             if 'apply_options' in job and job['apply_options']:
                 job_link = job['apply_options'][0].get('link', '')
 
-            # 2. If that fails, try the first 'related_links'
             if not job_link and 'related_links' in job and job['related_links']:
                 job_link = job['related_links'][0].get('link', '')
 
-            # 3. As a last resort, check for a top-level 'link'
             if not job_link:
                 job_link = job.get('link', '')
-            # --- END OF RESILIENT METHOD ---
             
             jobs.append(Resource(
                 type="job",
@@ -98,17 +104,23 @@ def get_jobs_from_serpapi(career: str, results: int = 10) -> List[Resource]:
     except Exception as e:
         print(f"AN ERROR OCCURRED with SerpApi: {e}")
         return []
-    
+
 # ----- Endpoint -----
 @app.post("/career-assessment", response_model=AssessmentResponse)
 async def career_assessment(request: AssessmentRequest):
     total_questions = request.total_questions or 3
     correct_count = sum(1 for a in request.previous_answers if a.correct)
-    last_answer_correct = True if not request.previous_answers else request.previous_answers[-1].correct
-    final_step = correct_count >= total_questions
-
-    if final_step:
-        # Final change: call the new SerpApi function
+    
+    if request.is_retry:
+        # A new prompt for when the user clicks 'Retry Question'
+        prompt = f"""
+        You are a career coach AI.
+        The user is pursuing a career as a {request.career}.
+        Previous answers: {chr(10).join([f"{a.question}: {'correct' if a.correct else 'incorrect'}" for a in request.previous_answers])}
+        The user has reviewed learning resources and is ready to try a new question. Provide the next technical question.
+        Output JSON: message, next_question
+        """
+    elif correct_count >= total_questions:
         jobs = get_jobs_from_serpapi(request.career)
         
         return AssessmentResponse(
@@ -116,38 +128,35 @@ async def career_assessment(request: AssessmentRequest):
             resources=jobs,
             final_step=True
         )
-
-    # ... (The rest of your AI prompt logic remains the same) ...
-    # Construct AI prompt for next question
-    if not request.previous_answers:
-        # Intro
+    elif request.previous_answers and request.previous_answers[-1].correct:
+        # User got the last answer correct, give them a new question
         prompt = f"""
-You are a career coach AI.
-Introduce the role of a {request.career} and provide a technical question (no personal/motivation).
-Output JSON: message, next_question
-"""
-    elif last_answer_correct:
+        You are a career coach AI.
+        The user is pursuing a career as a {request.career}.
+        Previous answers: {chr(10).join([f"{a.question}: {'correct' if a.correct else 'incorrect'}" for a in request.previous_answers])}
+        Provide the next technical question.
+        Output JSON: message, next_question
+        """
+    elif request.previous_answers and not request.previous_answers[-1].correct:
+        # Provide resources after an incorrect answer
         prompt = f"""
-You are a career coach AI.
-The user is pursuing a career as a {request.career}.
-Previous answers: {chr(10).join([f"{a.question}: {'correct' if a.correct else 'incorrect'}" for a in request.previous_answers])}
-Provide the next technical question.
-Output JSON: message, next_question
-"""
+        You are a career coach AI.
+        The user is pursuing a career as a {request.career}.
+        Previous answers: {chr(10).join([f"{a.question}: {'correct' if a.correct else 'incorrect'}" for a in request.previous_answers])}
+        The last answer was incorrect.
+        Provide a message to the user explaining that they can review the resources to help them with the next question. Also provide 3-5 learning resources (type: book/course/website/video, title, optional link). Do NOT provide a new question.
+        Output JSON: message, resources
+        """
     else:
-        # Provide resources and retry question
+        # First question
         prompt = f"""
-You are a career coach AI.
-The user is pursuing a career as a {request.career}.
-Previous answers: {chr(10).join([f"{a.question}: {'correct' if a.correct else 'incorrect'}" for a in request.previous_answers])}
-Last answer was incorrect.
-Provide 3-5 learning resources (type: book/course/website/video, title, optional link) and a retry technical question.
-Output JSON: message, next_question, resources
-"""
-
+        You are a career coach AI.
+        Provide a concise, engaging message that introduces the career of a {request.career} and then poses a technical question related to that field. The message should be polite and conversational.
+        Output JSON: message, next_question
+        """
+    
     ai_result = call_ai(prompt)
 
-    # Convert resources if present
     resources_list = None
     raw_resources = ai_result.get("resources")
     if raw_resources:
@@ -164,3 +173,25 @@ Output JSON: message, next_question, resources
         resources=resources_list,
         final_step=False
     )
+    
+#Endpoint number 2....
+@app.post("/reveal-answer")
+async def reveal_answer(request: AnswerRequest):
+    prompt = f"""
+You are a subject matter expert. A user is being quizzed and has requested the answer to the following question:
+"{request.question}"
+
+Please provide a concise, correct, and easy-to-understand answer to this question. Return it in a simple JSON object with a single key: "answer".
+"""
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.3
+        )
+        output = response.choices[0].message.content
+        return json.loads(output)
+    except Exception as e:
+        print(f"Reveal answer failed: {e}")
+        return {"answer": "Sorry, I was unable to retrieve the answer at this time."}

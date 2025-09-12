@@ -1,3 +1,5 @@
+### THIS IS TO TEST YOUR OPEN AI KEY AND SEE WHAT MODELS ARE AVAILABLE TO YOU BASED OFF THE GIVEN KEY
+
 from dotenv import load_dotenv
 import os
 import openai

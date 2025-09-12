@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Career Coach</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <div id="loading-indicator" class="hidden">
+            <p>Thinking...</p>
+        </div>
+
+        <div id="start-screen">
+            <h1>AI Career Coach</h1>
+            <p>Enter your desired career to begin the assessment.</p>
+            <input type="text" id="career-input" placeholder="e.g., Python Developer">
+            <button id="start-btn">Start Assessment</button>
+        </div>
+
+        <div id="question-screen" class="hidden">
+            <p id="ai-message"></p>
+            <h2 id="ai-question"></h2>
+            
+            <button id="reveal-btn">Reveal Answer</button>
+
+            <div id="answer-box" class="hidden">
+                <h4>Correct Answer:</h4>
+                <p id="ai-answer"></p>
+                <p>Did you get it right?</p>
+                <button id="correct-btn">Yes, I Was Correct</button>
+                <button id="incorrect-btn">No, I Was Incorrect</button>
+            </div>
+            
+            <button id="retry-btn" class="hidden">Retry Question</button>
+
+            <div id="resources-box"></div>
+        </div>
+
+        <div id="results-screen" class="hidden">
+            <h1 id="final-message">Congratulations!</h1>
+            <p>Here are some job opportunities:</p>
+            <ul id="job-list"></ul>
+        </div>
+    </div>
+    
+    <script src="dist/script.js"></script>
+</body>
+</html>
